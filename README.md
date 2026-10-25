@@ -103,11 +103,6 @@ stehen im PHP-Fehlerprotokoll unter `[Suchis Simple Backup]`. Die Fehleranzeige
 wird vom Download nicht global abgeschaltet; Fehler der Dateioperationen werden
 gezielt abgefangen und mit ihrer ursprünglichen PHP-Meldung protokolliert.
 
-Der isolierte HTTP-Regressionstest für PHP 8.5 lässt sich im Plugin-Verzeichnis
-mit `php -d error_reporting=32767 -d display_errors=1 tests/download.php` starten.
-Er benötigt die ZIP-Erweiterung und prüft beide gerenderten Download-Links,
-ZIP-Prüfsummen, HTTP-Header und Fehlerfälle. Er verwendet WordPress-Test-Stubs
-und ersetzt keinen angemeldeten Live-Test im echten WordPress-Backend.
 Eine PHP-8.5-spezifische Ursache des ursprünglich gemeldeten Fehlers ist bislang
 nicht belegt; dafür wird die ursprüngliche HTML-Fehlermeldung oder das passende
 Serverprotokoll benötigt.
