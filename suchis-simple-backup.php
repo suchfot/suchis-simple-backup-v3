@@ -3,7 +3,7 @@
  * Plugin Name: Suchis Simple Backup
  * Plugin URI: https://www.derperformer.com
  * Description: Einfaches Backup (Dateien + optional DB) als ZIP nach wp-content/backups inkl. Download-Links.
- * Version: 1.2.4
+ * Version: 2.0.0
  * Author: Christian Suchanek
  * Author URI: https://www.derperformer.com/wordperessplugin/suchis-simple-backup-dein-wordpress-backup-plugin/
  * Requires at least: 6.0
