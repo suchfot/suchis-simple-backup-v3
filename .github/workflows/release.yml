@@ -1,0 +1,35 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Build installable plugin ZIP
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          mkdir -p dist/suchis-simple-backup
+          cp suchis-simple-backup.php README.md dist/suchis-simple-backup/
+          cd dist
+          zip -r suchis-simple-backup.zip suchis-simple-backup
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$RELEASE_TAG" \
+            dist/suchis-simple-backup.zip \
+            --title "Suchis Simple Backup $RELEASE_TAG" \
+            --generate-notes

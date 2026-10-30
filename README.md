@@ -2,7 +2,7 @@
 
 Ein schlankes und benutzerfreundliches WordPress-Plugin für vollständige Website-Backups.
 
-**Version:** 1.2.4
+**Version:** 2.0.0
 **Lizenz:** GPLv2 oder später
 **Autor:** Christian Suchanek
 
@@ -24,10 +24,13 @@ Ein schlankes und benutzerfreundliches WordPress-Plugin für vollständige Websi
 
 ## ✨ Features
 
-- **Vollständige Backups:** Sichert alle Website-Dateien und die komplette WordPress-Datenbank
+- **Website-Backup:** Packt die Website-Dateien und, sofern der Datenbank-Dump gelingt, die WordPress-Datenbank in eine ZIP-Datei
 - **ZIP-Kompression:** Automatische Komprimierung für einfacheren Download und Speicher
 - **Lokale Speicherung:** Backups werden in `wp-content/backups/` gespeichert
-- **Benutzerfreundliches Interface:** Intuitives Admin-Panel im WordPress-Dashboard
+- **Hintergrundverarbeitung:** Lange Backup-Aufträge werden im Hintergrund verarbeitet, während die Oberfläche den Fortschritt abfragt
+- **Fortschritts- und Fehleranzeige:** Zeigt Datenbank- und Dateischritt sowie Diagnosemeldungen bei Fehlern
+- **Laufzeitangabe:** Meldet nach erfolgreichem Abschluss die Dauer des Backup-Auftrags
+- **Benutzerfreundliches Interface:** Backup-Verwaltung im WordPress-Dashboard mit Fortschrittsanzeige und Löschbestätigung
 - **Download-Management:** Backups direkt herunterladen oder löschen
 - **Intelligente Ausschlüsse:** Der Backup-Ordner wird automatisch vom Backup ausgeschlossen
 - **Sicherheitsmaßnahmen:** .htaccess-Schutz und Nonce-Verifizierung
@@ -39,7 +42,7 @@ Ein schlankes und benutzerfreundliches WordPress-Plugin für vollständige Websi
 
 ### Manuelle Installation
 
-1. Lade die neueste Version herunter: [Releases](https://github.com/derperformer/suchis-simple-backup/releases)
+1. Lade das Plugin-ZIP herunter: [Neueste Version herunterladen](https://github.com/suchfot/suchis-simple-backup-v3/releases/latest/download/suchis-simple-backup.zip)
 2. Entpacke die ZIP-Datei
 3. Lade den Ordner `suchis-simple-backup` in dein WordPress `wp-content/plugins/` Verzeichnis hoch
 4. Aktiviere das Plugin im WordPress-Dashboard unter **Plugins**
@@ -75,9 +78,13 @@ Gehe nach der Plugin-Aktivierung zu **Tools → Suchis Simple Backup**. Das Plug
 
 ### Ein Backup erstellen
 
-1. Klicke auf den Button **"Backup jetzt erstellen (Dateien + DB)"**
-2. Warte, bis das Backup abgeschlossen ist (Dauer hängt von der Website-Größe ab)
-3. Nach Abschluss siehst du eine Erfolgsmeldung mit Download-Link
+1. Klicke auf **Backup jetzt erstellen**.
+2. Die Oberfläche zeigt den Fortschritt für Datenbank und Dateien an. Schließe die Seite währenddessen möglichst nicht.
+3. Nach Abschluss wird die Backup-Datei in der Liste angezeigt und kann heruntergeladen werden.
+
+Der Auftrag wird über WP-Cron im Hintergrund gestartet. Reagiert WP-Cron nicht, versucht das Plugin je nach Serverkonfiguration eine direkte Hintergrundverarbeitung. Der Status wird währenddessen regelmäßig aktualisiert. Ist WP-Cron oder eine dafür benötigte Loopback-Anfrage blockiert, zeigt das Plugin einen Fehler mit Hinweisen zur Diagnose an.
+
+Der Datenbank-Dump ist best effort: Kann er nicht erstellt werden, kann das ZIP trotzdem mit den Website-Dateien erstellt werden. Prüfe deshalb die angezeigte Statusmeldung, wenn du ein vollständiges Datei- und Datenbank-Backup benötigst.
 
 ### Backups verwalten
 
@@ -87,7 +94,7 @@ Im Plugin-Interface siehst du eine Tabelle mit allen Backups:
 
 | Spalte | Beschreibung |
 |--------|-------------|
-| **Datei** | Name des Backup-Files (Format: `wp-backup_files-db_hostname_YYYY-MM-DD_HHmmss.zip`) |
+| **Datei** | Name der Backup-Datei (Format: `wp-backup_files-db_hostname_YYYY-MM-DD_HHmmss.zip`) |
 | **Größe** | Dateigröße in MB/GB |
 | **Datum** | Erstellungsdatum und -uhrzeit |
 | **Aktionen** | Download oder Löschen |
@@ -154,10 +161,7 @@ Alle Datenbankwerte werden korrekt escaped:
 
 ### F: Wie lange dauert ein Backup?
 
-**A:** Das hängt von der Größe deiner Website ab:
-- Kleine Sites (< 100 MB): 30 Sekunden bis 1 Minute
-- Mittlere Sites (100 MB - 1 GB): 2-5 Minuten
-- Große Sites (> 1 GB): 5-30+ Minuten
+**A:** Das hängt von der Größe der Datenbank und der Dateien sowie den Ressourcen des Servers ab. Die Oberfläche zeigt den aktuellen Arbeitsschritt an; nach erfolgreichem Abschluss wird die tatsächliche Laufzeit angezeigt.
 
 ### F: Können Backups vom Browser heruntergeladen werden?
 
@@ -165,16 +169,7 @@ Alle Datenbankwerte werden korrekt escaped:
 
 ### F: Kann ich automatische Backups planen?
 
-**A:** Aktuell nicht direkt im Plugin. Du kannst aber WP-Cron oder Webhooks verwenden:
-
-```php
-// Beispiel: Daily Backup via wp-cron
-add_action('daily_backup_schedule', 'trigger_ssbhf_run_backup');
-
-if (!wp_next_scheduled('daily_backup_schedule')) {
-    wp_schedule_event(time(), 'daily', 'daily_backup_schedule');
-}
-```
+**A:** Nein. WP-Cron wird vom Plugin nur verwendet, um einen manuell gestarteten Backup-Auftrag im Hintergrund auszuführen. Eine wiederkehrende Backup-Planung bietet das Plugin nicht.
 
 ### F: Wo werden Backups gespeichert?
 
@@ -189,7 +184,7 @@ if (!wp_next_scheduled('daily_backup_schedule')) {
 
 ### F: Was passiert bei Speicherplatzproblemen?
 
-**A:** Das Plugin kann kein Backup erstellen. Löschen Sie alte Backups oder vergrößern Sie den Speicher.
+**A:** Das Backup kann fehlschlagen, wenn für ZIP-Datei oder temporären Datenbank-Dump nicht genügend Speicherplatz verfügbar ist. Lösche alte Backups oder schaffe freien Speicherplatz auf dem Server.
 
 ---
 
@@ -231,6 +226,12 @@ ZIP konnte nicht erstellt werden (Schreibrechte?)
 chmod 755 wp-content/backups/
 ```
 
+### Backup schlägt fehl oder der Fortschritt startet nicht
+
+Wenn WP-Cron oder Loopback-Anfragen deaktiviert bzw. blockiert sind, kann WordPress den Hintergrundauftrag möglicherweise nicht starten. Prüfe unter **Werkzeuge → Website-Zustand**, ob Probleme mit geplanten Aufgaben oder Loopback-Anfragen gemeldet werden. Bei Bedarf kann dein Hosting-Support Serverfirewall und Sicherheitsplugins prüfen.
+
+Bei einem Fehler zeigt der Fortschrittsdialog Status und Diagnosemeldungen an. Der Backup-Ordner und seine Dateien werden zusätzlich im Plugin unter **Werkzeuge → Suchis Simple Backup** verwaltet.
+
 ### „ZIP wurde nicht korrekt geschrieben"
 
 **Fehler:**
@@ -254,15 +255,16 @@ set_time_limit(300); // 5 Minuten
 **Ursachen:**
 - Website ist zu groß
 - Server-Ressourcen begrenzt
-- PHP Timeout zu niedrig
+- Server-Ressourcen begrenzt
 
 **Lösungen:**
 ```php
-// In wp-config.php:
+// In wp-config.php; nur nach Rücksprache mit dem Hosting-Anbieter anpassen:
 define('WP_MEMORY_LIMIT', '256M');
 define('WP_MAX_MEMORY_LIMIT', '512M');
-set_time_limit(600); // 10 Minuten
 ```
+
+Das Plugin versucht, das PHP-Ausführungslimit für die Backup-Erstellung aufzuheben. Hosting-Limits können diese Einstellung jedoch übersteuern.
 
 ---
 
@@ -281,6 +283,15 @@ Beiträge sind willkommen! Bitte beachte:
 - PHP-Code: WordPress Coding Standards
 - Dokumentation: PHPDoc für alle Funktionen
 - Test: Funktionalität vor Pull Request testen
+
+### Release erstellen
+
+Nach dem Push der Änderungen auf den Standard-Branch erstellt ein Versions-Tag automatisch ein GitHub Release mit installierbarem Plugin-ZIP:
+
+```bash
+git tag v2.0.0
+git push origin v2.0.0
+```
 
 ---
 
@@ -312,30 +323,31 @@ Vollständige Lizenz: [GPL 2.0](https://www.gnu.org/licenses/gpl-2.0.html)
 **Autor:** Christian Suchanek
 **Website:** [www.derperformer.com](https://www.derperformer.com)
 **E-Mail:** [christian.suchanek@gmail.com](mailto:christian.suchanek@gmail.com)
-**GitHub:** [derperformer/suchis-simple-backup](https://github.com/derperformer/suchis-simple-backup)
+**GitHub:** [suchfot/suchis-simple-backup-v3](https://github.com/suchfot/suchis-simple-backup-v3)
 
 ---
-
-## 🎯 Roadmap
-
-- [ ] Automatische Backup-Planung (WP-Cron)
-- [ ] Cloud-Integration (Google Drive, Dropbox, AWS S3)
-- [ ] E-Mail-Benachrichtigungen
-- [ ] Backup-Restore-Funktion
-- [ ] Selektive Backup-Optionen
-- [ ] Backup-Verschlüsselung
 
 ---
 
 ## 📋 Changelog
 
+### Version 2.0.0
+
+- ✅ Backup-Aufträge werden im Hintergrund verarbeitet und der Fortschritt wird in der Admin-Oberfläche angezeigt
+- ✅ Datenbank- und Dateischritt werden getrennt dargestellt
+- ✅ Diagnoseprotokoll und konkretere Fehlermeldungen für fehlgeschlagene Backup-Aufträge
+- ✅ Backup-Laufzeit wird nach erfolgreichem Abschluss angezeigt
+- ✅ Backup-Verwaltung mit Download und bestätigtem Löschen überarbeitet
+
 ### Version 1.2.3
+
 - ✅ Code-Refactoring für WordPress-Standards
 - ✅ Verbesserte PHPDoc-Dokumentation
 - ✅ Translatable Strings hinzugefügt
 - ✅ Sicherheitsverbesserungen
 
 ### Version 1.2.0
+
 - ✅ Erstrelease auf GitHub
 - ✅ Benutzerfreundliche Admin-Interface
 - ✅ Database Dump mit SQL Export
@@ -353,4 +365,4 @@ Dieses Plugin wird "AS IS" bereitgestellt. Der Autor übernimmt keine Haftung f�
 
 ---
 
-**Zuletzt aktualisiert:** 16. Februar 2026
+**Zuletzt aktualisiert:** 30. Oktober 2026
