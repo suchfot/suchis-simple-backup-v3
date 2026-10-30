@@ -2,6 +2,8 @@ name: Release
 
 on:
   push:
+    branches:
+      - master
     tags:
       - "v*"
 
@@ -15,9 +17,16 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
+      - name: Determine release tag
+        id: release
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=build-$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build installable plugin ZIP
-        env:
-          RELEASE_TAG: ${{ github.ref_name }}
         run: |
           mkdir -p dist/suchis-simple-backup
           cp suchis-simple-backup.php README.md dist/suchis-simple-backup/
@@ -27,9 +36,15 @@ jobs:
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
         run: |
-          gh release create "$RELEASE_TAG" \
-            dist/suchis-simple-backup.zip \
-            --title "Suchis Simple Backup $RELEASE_TAG" \
-            --generate-notes
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" dist/suchis-simple-backup.zip --clobber
+            gh release edit "$RELEASE_TAG" --title "Suchis Simple Backup $RELEASE_TAG" --latest
+          else
+            gh release create "$RELEASE_TAG" \
+              dist/suchis-simple-backup.zip \
+              --title "Suchis Simple Backup $RELEASE_TAG" \
+              --generate-notes \
+              --latest
+          fi

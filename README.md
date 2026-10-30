@@ -285,12 +285,14 @@ Beiträge sind willkommen! Bitte beachte:
 
 ### Release erstellen
 
-Nach dem Push der Änderungen auf den Standard-Branch erstellt ein Versions-Tag automatisch ein GitHub Release mit installierbarem Plugin-ZIP:
+Jeder Push auf `master` erstellt automatisch ein GitHub-Release `build-<Laufnummer>` mit dem installierbaren Plugin-ZIP. Der Download-Link oben verweist auf das jeweils neueste Release. Für eine benannte Version kannst du zusätzlich ein Versions-Tag pushen:
 
 ```bash
-git tag v2.0.0
-git push origin v2.0.0
+git tag v2.0.1
+git push origin v2.0.1
 ```
+
+Auch das Versions-Tag erstellt ein Release und aktualisiert den Download-Link auf das neueste ZIP.
 
 ---
 
