@@ -58,14 +58,16 @@ Ein schlankes und benutzerfreundliches WordPress-Plugin für vollständige Websi
 ## 📋 Anforderungen
 
 - **WordPress:** 6.0 oder höher
-- **PHP:** 8.0 oder höher
+- **PHP:** 7.4 oder höher
 - **PHP-Extensions:** `zip` (erforderlich)
 - **Speicherplatz:** Mindestens so viel freier Platz wie deine gesamte Website groß ist
 - **Schreibberechtigungen:** `wp-content/` Ordner muss schreibbar sein
 
 ### Überprüfung der Anforderungen
 
-Gehe nach der Plugin-Aktivierung zu **Tools → Suchis Simple Backup**. Das Plugin überprüft automatisch, ob die zip-Extension verfügbar ist.
+Nach der Aktivierung zeigt WordPress eine erste Systemprüfung. Unter **Werkzeuge → Suchis Simple Backup** findest du die vollständige Checkliste. Sie prüft PHP- und WordPress-Version, ZIP-Erweiterung und ZIP-Erstellung, Datenbankverbindung sowie Schreibrechte für Backup- und temporäres Verzeichnis. Bei fehlgeschlagenen Pflichtprüfungen ist der Backup-Start gesperrt.
+
+WP-Cron/Loopback wird beim Start des Hintergrundauftrags geprüft. Der benötigte Gesamtspeicher kann nicht zuverlässig vorab bestimmt werden, da er von der Website-Größe abhängt.
 
 ---
 
