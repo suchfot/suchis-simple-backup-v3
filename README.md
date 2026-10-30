@@ -67,7 +67,7 @@ Ein schlankes und benutzerfreundliches WordPress-Plugin für vollständige Websi
 
 Nach der Aktivierung zeigt WordPress eine erste Systemprüfung. Unter **Werkzeuge → Suchis Simple Backup** findest du die vollständige Checkliste. Sie prüft PHP- und WordPress-Version, ZIP-Erweiterung und ZIP-Erstellung, Datenbankverbindung sowie Schreibrechte für Backup- und temporäres Verzeichnis. Bei fehlgeschlagenen Pflichtprüfungen ist der Backup-Start gesperrt.
 
-WP-Cron/Loopback wird beim Start des Hintergrundauftrags geprüft. Der benötigte Gesamtspeicher kann nicht zuverlässig vorab bestimmt werden, da er von der Website-Größe abhängt.
+Die Dateien werden in kleinen AJAX-Paketen untersucht und zum ZIP hinzugefügt. Dafür sind weder WP-Cron noch Loopback-Anfragen erforderlich. Die ZIP-Größe ist eine Schätzung anhand der Dateitypen und enthält nicht die Datenbank.
 
 ---
 
@@ -80,11 +80,10 @@ WP-Cron/Loopback wird beim Start des Hintergrundauftrags geprüft. Der benötigt
 
 ### Ein Backup erstellen
 
-1. Klicke auf **Backup jetzt erstellen**.
-2. Die Oberfläche zeigt den Fortschritt für Datenbank und Dateien an. Schließe die Seite währenddessen möglichst nicht.
-3. Nach Abschluss wird die Backup-Datei in der Liste angezeigt und kann heruntergeladen werden.
-
-Der Auftrag wird über WP-Cron im Hintergrund gestartet. Reagiert WP-Cron nicht, versucht das Plugin je nach Serverkonfiguration eine direkte Hintergrundverarbeitung. Der Status wird währenddessen regelmäßig aktualisiert. Ist WP-Cron oder eine dafür benötigte Loopback-Anfrage blockiert, zeigt das Plugin einen Fehler mit Hinweisen zur Diagnose an.
+1. Öffne **Werkzeuge → Suchis Simple Backup** und warte, bis die Dateianalyse abgeschlossen ist.
+2. Die Analyse zeigt Anzahl und Gesamtgröße der Dateien sowie eine geschätzte ZIP-Größe. Die Datenbank wird dabei nicht eingerechnet.
+3. Klicke auf **Backup jetzt erstellen**. Die Dateipakete werden über einzelne AJAX-Anfragen verarbeitet; kurze Unterbrechungen der Statusabfrage gelten nicht automatisch als Backupfehler.
+4. Nach Abschluss wird die Backup-Datei in der Liste angezeigt und kann heruntergeladen werden.
 
 Der Datenbank-Dump ist best effort: Kann er nicht erstellt werden, kann das ZIP trotzdem mit den Website-Dateien erstellt werden. Prüfe deshalb die angezeigte Statusmeldung, wenn du ein vollständiges Datei- und Datenbank-Backup benötigst.
 
@@ -171,7 +170,7 @@ Alle Datenbankwerte werden korrekt escaped:
 
 ### F: Kann ich automatische Backups planen?
 
-**A:** Nein. WP-Cron wird vom Plugin nur verwendet, um einen manuell gestarteten Backup-Auftrag im Hintergrund auszuführen. Eine wiederkehrende Backup-Planung bietet das Plugin nicht.
+**A:** Nein. Das Plugin erstellt Backups nur auf manuelle Anforderung. Eine wiederkehrende Backup-Planung bietet es nicht.
 
 ### F: Wo werden Backups gespeichert?
 
@@ -228,11 +227,9 @@ ZIP konnte nicht erstellt werden (Schreibrechte?)
 chmod 755 wp-content/backups/
 ```
 
-### Backup schlägt fehl oder der Fortschritt startet nicht
+### Backup schlägt fehl oder der Fortschritt bleibt stehen
 
-Wenn WP-Cron oder Loopback-Anfragen deaktiviert bzw. blockiert sind, kann WordPress den Hintergrundauftrag möglicherweise nicht starten. Prüfe unter **Werkzeuge → Website-Zustand**, ob Probleme mit geplanten Aufgaben oder Loopback-Anfragen gemeldet werden. Bei Bedarf kann dein Hosting-Support Serverfirewall und Sicherheitsplugins prüfen.
-
-Bei einem Fehler zeigt der Fortschrittsdialog Status und Diagnosemeldungen an. Der Backup-Ordner und seine Dateien werden zusätzlich im Plugin unter **Werkzeuge → Suchis Simple Backup** verwaltet.
+Die Dateianalyse und das Packen laufen in begrenzten AJAX-Paketen; WP-Cron und Loopback-Anfragen sind dafür nicht erforderlich. Eine kurze Unterbrechung der Statusabfrage wird automatisch erneut versucht. Bleibt ein Paket dauerhaft fehlerhaft, zeigt der Dialog die konkrete Meldung an. Prüfe dann Dateiberechtigungen, Speicherplatz und das PHP-Fehlerprotokoll.
 
 ### „ZIP wurde nicht korrekt geschrieben"
 

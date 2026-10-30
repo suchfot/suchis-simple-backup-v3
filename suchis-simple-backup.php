@@ -37,14 +37,12 @@ add_action(
     }
 );
 
-add_action('admin_post_ssbhf_run', 'Ssbhf_Run_backup');
 add_action('admin_post_ssbhf_download', 'Ssbhf_Download_backup');
 add_action('admin_post_ssbhf_delete', 'Ssbhf_Delete_backup');
 add_action('wp_ajax_ssbhf_start', 'Ssbhf_Ajax_start');
 add_action('wp_ajax_ssbhf_analyze', 'Ssbhf_Ajax_analyze');
-add_action('wp_ajax_ssbhf_status', 'Ssbhf_Ajax_status');
-add_action('ssbhf_process_backup_job', 'Ssbhf_Process_backup_job');
-add_action('ssbhf_process_analysis_job', 'Ssbhf_Process_analysis_job');
+add_action('wp_ajax_ssbhf_analyze_chunk', 'Ssbhf_Ajax_analyze_chunk');
+add_action('wp_ajax_ssbhf_backup_chunk', 'Ssbhf_Ajax_backup_chunk');
 add_action('admin_head', 'Ssbhf_Admin_styles');
 add_action('admin_notices', 'Ssbhf_Show_Activation_notice');
 register_activation_hook(__FILE__, 'Ssbhf_Set_Activation_notice');
@@ -70,6 +68,7 @@ function Ssbhf_Admin_styles(): void
         .ssb-intro h2 { margin: 0 0 6px; font-size: 20px; font-weight: 600; }
         .ssb-intro p { margin: 0; color: #50575e; }
         .ssb-intro .button { white-space: nowrap; }
+        .ssb-intro__actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
         .ssb-info { margin: 0 0 22px; color: #50575e; }
         .ssb-info code, .ssb-table code { padding: 3px 6px; background: #f0f0f1; color: #2c3338; }
         .ssb-checks { margin: 0 0 22px; padding: 16px 20px; border: 1px solid #c3c4c7; background: #fff; }
@@ -131,10 +130,6 @@ function Ssbhf_Admin_styles(): void
         .ssb-progress__row.is-active .ssb-progress__icon { color: #2271b1; }
         .ssb-progress__row.is-done .ssb-progress__icon { color: #00a32a; }
         .ssb-progress__label { flex: 1; }
-        .ssb-terminal { min-height: 190px; max-height: 190px; box-sizing: border-box; margin-top: 16px; padding: 12px 14px; overflow-y: auto; text-align: left; background: #1d2327; color: #dcdcde; font: 12px/1.6 Consolas, Monaco, monospace; }
-        .ssb-terminal__line { display: block; }
-        .ssb-terminal__line::before { content: "> "; color: #72aee6; }
-        .ssb-terminal__line.is-error { color: #f86368; }
         .ssb-overlay__close { display: none; margin: 0; }
         .ssb-overlay.has-error .ssb-overlay__close { display: block; margin: 28px auto 0; }
         .ssb-overlay.has-error .ssb-overlay__spinner { display: none; }
@@ -165,6 +160,7 @@ function Ssbhf_Admin_styles(): void
     echo '<script>
         document.addEventListener("DOMContentLoaded", function () {
             const button = document.getElementById("ssb-start-backup");
+            const analysisStart = document.getElementById("ssb-analysis-start");
             const overlay = document.getElementById("ssb-backup-overlay");
             const status = document.getElementById("ssb-overlay-status");
             const analysisOverlay = document.getElementById("ssb-analysis-overlay");
@@ -179,6 +175,7 @@ function Ssbhf_Admin_styles(): void
             const analysisHint = document.getElementById("ssb-analysis-hint");
             const analysisError = document.getElementById("ssb-analysis-error");
             const analysisClose = document.getElementById("ssb-analysis-close");
+            let analysisJobId = null;
 
             document.querySelectorAll(".ssb-checks__toggle").forEach(function (toggle) {
                 const panel = document.getElementById(toggle.getAttribute("aria-controls"));
@@ -209,21 +206,6 @@ function Ssbhf_Admin_styles(): void
                 button.setAttribute("aria-disabled", "true");
             };
 
-            const renderTerminal = function (container, data) {
-                const terminal = document.createElement("div");
-                terminal.className = "ssb-terminal";
-                const log = Array.isArray(data.log) && data.log.length
-                    ? data.log
-                    : [{ message: "Backup-Job wird gestartet ...", error: false }];
-                log.forEach(function (line) {
-                    const lineElement = document.createElement("span");
-                    lineElement.className = "ssb-terminal__line" + (line.error ? " is-error" : "");
-                    lineElement.textContent = line.message;
-                    terminal.appendChild(lineElement);
-                });
-                container.appendChild(terminal);
-            };
-
             const renderProgress = function (data) {
                 status.textContent = "";
                 const progress = document.createElement("div");
@@ -244,20 +226,18 @@ function Ssbhf_Admin_styles(): void
 
                 if (data.step === "files") {
                     addRow("dashicons-yes-alt", data.database_message, "is-done");
-                    addRow("dashicons-open-folder", "Schritt 2 von 2: Dateien werden gepackt ...", "is-active");
+                    addRow("dashicons-open-folder", "Dateien gepackt: " + Number(data.processed_files || 0).toLocaleString("de-DE") + " von " + Number(data.files || 0).toLocaleString("de-DE"), "is-active");
                 } else {
                     addRow("dashicons-database", "Schritt 1 von 2: Datenbank wird gesichert ...", "is-active");
                     addRow("dashicons-open-folder", "Schritt 2 von 2: Dateien werden danach gepackt", "");
                 }
                 status.appendChild(progress);
-                renderTerminal(status, data);
             };
 
             const renderFailure = function (data) {
                 overlay.classList.add("has-error");
                 titleText.textContent = "Backup konnte nicht erstellt werden";
                 status.textContent = data.message || "Unbekannter Fehler beim Erstellen des Backups.";
-                renderTerminal(status, data);
                 closeButton.style.display = "inline-block";
             };
 
@@ -293,6 +273,11 @@ function Ssbhf_Admin_styles(): void
                 analysisZipBytes.textContent = "ca. " + formatBytes(data.estimated_zip_bytes);
                 analysisHint.hidden = false;
                 analysisClose.hidden = false;
+                if (button.getAttribute("data-backup-ready") === "1") {
+                    button.disabled = false;
+                    button.classList.remove("disabled");
+                    button.removeAttribute("aria-disabled");
+                }
                 analysisClose.focus();
             };
 
@@ -308,7 +293,7 @@ function Ssbhf_Admin_styles(): void
             };
 
             const pollAnalysis = function (jobId, failures) {
-                request("ssbhf_status", { job_id: jobId }).then(function (response) {
+                request("ssbhf_analyze_chunk", { job_id: jobId }).then(function (response) {
                     if (!response.success) throw new Error(response.data || "Status konnte nicht gelesen werden.");
                     const data = response.data;
                     if (data.status === "done") {
@@ -322,9 +307,9 @@ function Ssbhf_Admin_styles(): void
                     analysisStatus.textContent = Number(data.files || 0).toLocaleString("de-DE")
                         + " Dateien geprüft, " + formatBytes(data.bytes || 0) + " erfasst ...";
                     window.setTimeout(function () { pollAnalysis(jobId, 0); }, 1000);
-                }).catch(function () {
+                }).catch(function (error) {
                     const nextFailures = failures + 1;
-                    analysisStatus.textContent = "Die Statusabfrage ist kurz unterbrochen. Die Analyse läuft möglicherweise weiter; erneuter Versuch ...";
+                    analysisStatus.textContent = "Statusabfrage unterbrochen: " + error.message + ". Die Analyse läuft möglicherweise weiter; erneuter Versuch ...";
                     window.setTimeout(function () {
                         pollAnalysis(jobId, nextFailures);
                     }, Math.min(15000, 2000 * nextFailures));
@@ -334,19 +319,37 @@ function Ssbhf_Admin_styles(): void
             if (analysisOverlay) {
                 analysisClose.addEventListener("click", function () {
                     analysisOverlay.classList.remove("is-visible");
-                    button.focus();
+                    analysisStart.disabled = false;
+                    analysisStart.focus();
                 });
-                request("ssbhf_analyze", {}).then(function (response) {
-                    if (!response.success) throw new Error(response.data || "Dateianalyse konnte nicht gestartet werden.");
-                    pollAnalysis(response.data.job_id, 0);
-                }).catch(function (error) {
-                    failAnalysis(error.message);
+                analysisStart.addEventListener("click", function () {
+                    analysisJobId = null;
+                    analysisStart.disabled = true;
+                    button.disabled = true;
+                    button.setAttribute("aria-disabled", "true");
+                    analysisTitle.textContent = "Bitte warten: Deine Installation wird untersucht";
+                    analysisMessage.textContent = "Die Dateien deiner Installation werden gezählt und ihre Größe wird ermittelt.";
+                    analysisStatus.textContent = "Analyse wird gestartet ...";
+                    analysisProgress.hidden = false;
+                    analysisSummary.hidden = true;
+                    analysisHint.hidden = true;
+                    analysisError.hidden = true;
+                    analysisError.textContent = "";
+                    analysisClose.hidden = true;
+                    analysisOverlay.classList.add("is-visible");
+                    request("ssbhf_analyze", {}).then(function (response) {
+                        if (!response.success) throw new Error(response.data || "Dateianalyse konnte nicht gestartet werden.");
+                        analysisJobId = response.data.job_id;
+                        pollAnalysis(response.data.job_id, 0);
+                    }).catch(function (error) {
+                        failAnalysis(error.message);
+                    });
                 });
             }
 
             let statusPollFailures = 0;
             const poll = function (jobId) {
-                request("ssbhf_status", { job_id: jobId }).then(function (response) {
+                request("ssbhf_backup_chunk", { job_id: jobId }).then(function (response) {
                     if (!response.success) throw new Error(response.data || "Status konnte nicht gelesen werden.");
                     statusPollFailures = 0;
                     const data = response.data;
@@ -359,7 +362,7 @@ function Ssbhf_Admin_styles(): void
                         return;
                     }
                     renderProgress(data);
-                    window.setTimeout(function () { poll(jobId); }, 2000);
+                    window.setTimeout(function () { poll(jobId); }, 300);
                 }).catch(function (error) {
                     statusPollFailures++;
                     status.textContent = "Die Statusabfrage ist vorübergehend unterbrochen. Das Backup kann im Hintergrund weiterlaufen; wir versuchen es in Kürze erneut. (" + error.message + ")";
@@ -368,8 +371,9 @@ function Ssbhf_Admin_styles(): void
             };
 
             button.addEventListener("click", function () {
+                if (!analysisJobId) return;
                 showOverlay("Backup wird jetzt gestartet ...");
-                request("ssbhf_start", {}).then(function (response) {
+                request("ssbhf_start", { analysis_job_id: analysisJobId }).then(function (response) {
                     if (!response.success) throw new Error(response.data || "Backup konnte nicht gestartet werden.");
                     renderProgress(response.data);
                     poll(response.data.job_id);
@@ -614,7 +618,7 @@ function Ssbhf_Render_page(): void
     echo $backup_ready
         ? '<p class="ssb-checks__hint">Alle Pflichtprüfungen bestanden. Das Backup kann gestartet werden.</p>'
         : '<p class="ssb-checks__hint">Mindestens eine Pflichtprüfung ist fehlgeschlagen. Das Backup ist gesperrt, bis alle Voraussetzungen erfüllt sind.</p>';
-    echo '<p class="ssb-checks__hint">WP-Cron und Loopback werden beim Start des Hintergrundauftrags geprüft. Der benötigte Gesamtspeicher hängt von deiner Website ab und lässt sich hier nicht sicher vorhersagen.</p>';
+    echo '<p class="ssb-checks__hint">Die Dateien werden in kleinen Paketen geprüft und zum ZIP hinzugefügt. WP-Cron ist dafür nicht erforderlich. Die ZIP-Größe ist eine Schätzung ohne Datenbank.</p>';
     echo '</div></div>';
 
     if ($notice === 'created' && $file) {
@@ -629,8 +633,11 @@ function Ssbhf_Render_page(): void
 
     echo '<div class="ssb-intro">';
     echo '<div><h2>Website sichern</h2><p>Erstellt ein vollständiges Backup aus Dateien und Datenbank.</p></div>';
-    $disabled = $backup_ready ? '' : ' disabled="disabled" aria-disabled="true"';
-    echo '<button type="button" id="ssb-start-backup" class="button button-primary"' . $disabled . '><span class="dashicons dashicons-database-export" aria-hidden="true"></span> Backup jetzt erstellen</button>';
+    echo '<div class="ssb-intro__actions">';
+    echo '<button type="button" id="ssb-analysis-start" class="button"><span class="dashicons dashicons-search" aria-hidden="true"></span> Vorab-Backup prüfen</button>';
+    $backup_ready_attribute = $backup_ready ? '1' : '0';
+    echo '<button type="button" id="ssb-start-backup" class="button button-primary" data-backup-ready="' . esc_attr($backup_ready_attribute) . '" disabled="disabled" aria-disabled="true"><span class="dashicons dashicons-database-export" aria-hidden="true"></span> Backup jetzt erstellen</button>';
+    echo '</div>';
     echo '</div>';
     echo '<p class="ssb-info">Backups liegen in <code>wp-content/backups</code>. Dieser Ordner wird beim ZIP-Erstellen automatisch <strong>ausgeschlossen</strong>, damit sich Backups nicht selbst aufblasen.</p>';
 
@@ -657,10 +664,10 @@ function Ssbhf_Render_page(): void
     }
 
     echo '<p class="ssb-footer">Author: Christian Suchanek · <a href="mailto:christian.suchanek@gmail.com">christian.suchanek@gmail.com</a></p>';
-    echo '<div id="ssb-analysis-overlay" class="ssb-analysis-overlay is-visible" role="dialog" aria-modal="true" aria-labelledby="ssb-analysis-title" aria-describedby="ssb-analysis-message">';
+    echo '<div id="ssb-analysis-overlay" class="ssb-analysis-overlay" role="dialog" aria-modal="true" aria-labelledby="ssb-analysis-title" aria-describedby="ssb-analysis-message">';
     echo '<div class="ssb-analysis__box"><h2 id="ssb-analysis-title" class="ssb-analysis__title">Bitte warten: Deine Installation wird untersucht</h2><p id="ssb-analysis-message" class="ssb-analysis__message">Die Dateien deiner Installation werden gezählt und ihre Größe wird ermittelt.</p><div id="ssb-analysis-progress" class="ssb-analysis__progress" role="progressbar" aria-label="Dateien werden untersucht"><span class="ssb-analysis__progress-bar"></span></div><p id="ssb-analysis-status" class="ssb-analysis__status" aria-live="polite">Analyse wird gestartet ...</p><dl id="ssb-analysis-summary" class="ssb-analysis__summary" hidden><dt>Zu speichernde Dateien</dt><dd id="ssb-analysis-files"></dd><dt>Unkomprimierte Dateigröße</dt><dd id="ssb-analysis-bytes"></dd><dt>Geschätzte ZIP-Größe</dt><dd id="ssb-analysis-zip-bytes"></dd></dl><p id="ssb-analysis-hint" class="ssb-analysis__hint" hidden>Die ZIP-Größe ist eine Schätzung anhand der Dateitypen. Die Datenbank ist nicht eingerechnet; die tatsächliche Archivgröße kann abweichen.</p><p id="ssb-analysis-error" class="ssb-analysis__error" hidden></p><button type="button" id="ssb-analysis-close" class="button button-primary ssb-analysis__close" hidden>Weiter</button></div></div>';
     echo '<div id="ssb-backup-overlay" class="ssb-overlay" role="status" aria-live="polite" aria-label="Backup wird erstellt">';
-    echo '<div class="ssb-overlay__box"><span class="spinner is-active ssb-overlay__spinner" aria-hidden="true"></span><h2 class="ssb-overlay__title"><span class="dashicons dashicons-warning ssb-overlay__warning" aria-hidden="true"></span><span class="ssb-overlay__title-text">Backup wird jetzt erstellt</span><button type="button" id="ssb-error-help-toggle" class="ssb-help-toggle" aria-expanded="false" aria-controls="ssb-error-help" title="Was bedeutet diese Meldung?"><span class="dashicons dashicons-editor-help" aria-hidden="true"></span><span class="screen-reader-text">Was bedeutet diese Meldung?</span></button></h2><p class="ssb-overlay__notice">Bitte schließen Sie dieses Fenster nicht. Große Installationen können mehrere Minuten oder länger dauern. Eine kurze Unterbrechung der Statusabfrage bedeutet nicht automatisch, dass das Backup fehlgeschlagen ist; der Status wird erneut abgefragt.</p><div id="ssb-overlay-status" class="ssb-overlay__text">Bitte warten ...</div><div id="ssb-error-help" class="ssb-help" hidden><p><strong>Was bedeutet das?</strong> WordPress hat den Backupauftrag angenommen, konnte ihn aber nicht im Hintergrund starten. Dafür sind normalerweise WP-Cron oder interne Loopback-Anfragen zuständig.</p><p><strong>Was kannst du tun?</strong> Prüfe zuerst unter <strong>Werkzeuge &rarr; Website-Zustand</strong>, ob WordPress Fehler bei Loopback-Anfragen oder geplanten Aufgaben meldet. Informiere danach die WordPress-Administration, deine betreuende Agentur oder den Hosting-Support.</p><p>Bitte nenne dabei diese Fehlermeldung und frage konkret nach <strong>WP-Cron</strong>, <strong>Loopback-Anfragen</strong>, Serverfirewall und Sicherheitsplugins. Es ist nicht automatisch ein Speicherplatzproblem.</p></div><button type="button" id="ssb-overlay-close" class="button ssb-overlay__close">Schließen</button></div></div>';
+    echo '<div class="ssb-overlay__box"><span class="spinner is-active ssb-overlay__spinner" aria-hidden="true"></span><h2 class="ssb-overlay__title"><span class="dashicons dashicons-warning ssb-overlay__warning" aria-hidden="true"></span><span class="ssb-overlay__title-text">Backup wird jetzt erstellt</span><button type="button" id="ssb-error-help-toggle" class="ssb-help-toggle" aria-expanded="false" aria-controls="ssb-error-help" title="Was bedeutet diese Meldung?"><span class="dashicons dashicons-editor-help" aria-hidden="true"></span><span class="screen-reader-text">Was bedeutet diese Meldung?</span></button></h2><p class="ssb-overlay__notice">Bitte schließen Sie dieses Fenster nicht. Große Installationen können mehrere Minuten oder länger dauern. Das ZIP wird in kleinen Dateipaketen erstellt; kurze Statusunterbrechungen bedeuten nicht automatisch einen Abbruch.</p><div id="ssb-overlay-status" class="ssb-overlay__text">Bitte warten ...</div><div id="ssb-error-help" class="ssb-help" hidden><p><strong>Was bedeutet das?</strong> Ein Dateipaket konnte nicht gelesen oder zum ZIP hinzugefügt werden.</p><p><strong>Was kannst du tun?</strong> Notiere die Fehlermeldung aus dem Protokoll und prüfe Dateiberechtigungen, verfügbaren Speicherplatz sowie das PHP-Fehlerprotokoll.</p></div><button type="button" id="ssb-overlay-close" class="button ssb-overlay__close">Schließen</button></div></div>';
     echo '<div id="ssb-delete-modal" class="ssb-delete-modal" role="dialog" aria-modal="true" aria-labelledby="ssb-delete-title">';
     echo '<div class="ssb-delete-modal__box"><span class="dashicons dashicons-warning ssb-delete-modal__icon" aria-hidden="true"></span><h2 id="ssb-delete-title" class="ssb-delete-modal__title">Backup wirklich löschen?</h2><p class="ssb-delete-modal__text">Diese Datei wird dauerhaft vom Server entfernt:</p><code id="ssb-delete-name" class="ssb-delete-modal__file"></code><div class="ssb-delete-modal__actions"><button type="button" id="ssb-delete-cancel" class="button">Abbrechen</button><a id="ssb-delete-confirm" class="button button-primary ssb-delete-modal__confirm" href="#"><span class="dashicons dashicons-trash" aria-hidden="true"></span> Löschen</a></div></div></div>';
     echo '</div>';
@@ -679,73 +686,231 @@ function Ssbhf_Ajax_start(): void
         wp_send_json_error('Die Systemprüfung ist nicht vollständig. Bitte prüfe die Voraussetzungen auf der Plugin-Seite.', 400);
     }
 
-    Ssbhf_Ensure_dirs();
-    $job_id = wp_generate_uuid4();
+    $job_id = isset($_POST['analysis_job_id'])
+        ? sanitize_text_field(wp_unslash($_POST['analysis_job_id']))
+        : '';
+    $status = $job_id ? Ssbhf_Read_job_status($job_id) : false;
+    $state_path = $job_id ? Ssbhf_Analysis_state_path($job_id) : '';
+    $state = $state_path && is_readable($state_path)
+        ? json_decode((string) file_get_contents($state_path), true)
+        : false;
+
+    if (!is_array($status) || $status['status'] !== 'done' || $status['task'] !== 'analysis'
+        || !is_array($state) || empty($state['manifest_path']) || !is_readable($state['manifest_path'])
+    ) {
+        wp_send_json_error('Die Dateianalyse fehlt oder ist noch nicht abgeschlossen. Bitte lade die Seite neu.', 400);
+    }
+
+    $host = parse_url(home_url(), PHP_URL_HOST);
+    $host = $host ? preg_replace('~[^a-zA-Z0-9\._-]~', '-', $host) : 'site';
+    $filename = 'wp-backup_files-db_' . $host . '_' . gmdate('Y-m-d_His') . '.zip';
+    $state['task'] = 'backup';
+    $state['manifest_offset'] = 0;
+    $state['processed_files'] = 0;
+    $state['zip_path'] = Ssbhf_Backup_path($filename);
+    $state['filename'] = $filename;
+    $state['tmp_sql'] = trailingslashit(SSBHF_TMP_DIR) . 'database_' . $host . '_' . gmdate('Ymd_His') . '.sql';
+    $state['zip_initialized'] = false;
+    $state['started_at'] = microtime(true);
+
+    if (@file_put_contents($state_path, wp_json_encode($state), LOCK_EX) === false) {
+        wp_send_json_error('Der Fortschritt des Backups konnte nicht gespeichert werden.', 500);
+    }
+
     Ssbhf_Write_job_status(
-        $job_id, [
-        'status'  => 'queued',
-        'message' => 'Backup wird im Hintergrund gestartet ...',
-        'created_at' => time(),
+        $job_id,
+        [
+            'status'          => 'running',
+            'task'            => 'backup',
+            'step'            => 'database',
+            'message'         => 'Datenbank wird vorbereitet ...',
+            'files'           => $state['files'],
+            'processed_files' => 0,
+            'bytes'           => $state['bytes'],
+            'estimated_zip_bytes' => $state['estimated_zip_bytes'],
         ]
     );
 
-    $scheduled = wp_schedule_single_event(time() + 1, 'ssbhf_process_backup_job', [$job_id], true);
-    if (is_wp_error($scheduled)) {
-        if (function_exists('fastcgi_finish_request')) {
-            $fallback_status = [
-                'status'  => 'running',
-                'step'    => 'database',
-                'message' => 'WP-Cron ist nicht verfügbar. Backup wird direkt im Hintergrund verarbeitet ...',
-            ];
-            Ssbhf_Write_job_status($job_id, $fallback_status);
-            Ssbhf_Send_ajax_response(
-                [
-                'job_id'  => $job_id,
-                'message' => $fallback_status['message'],
-                'step'    => 'database',
-                ]
+    wp_send_json_success(['job_id' => $job_id, 'step' => 'database']);
+}
+
+/**
+ * Process one bounded ZIP packet requested by the browser.
+ *
+ * @return void
+ */
+function Ssbhf_Ajax_backup_chunk(): void
+{
+    Ssbhf_Check_ajax_access();
+    $job_id = isset($_POST['job_id']) ? sanitize_text_field(wp_unslash($_POST['job_id'])) : '';
+    $status = $job_id ? Ssbhf_Read_job_status($job_id) : false;
+    if (!is_array($status) || empty($status['task']) || $status['task'] !== 'backup') {
+        wp_send_json_error('Der Backupauftrag wurde nicht gefunden.', 404);
+    }
+    if ($status['status'] === 'done' || $status['status'] === 'failed') {
+        if ($status['status'] === 'done' && !empty($status['file'])) {
+            $status['redirect'] = admin_url(
+                'tools.php?page=ssb-simple-backup&ssb_notice=created&file=' . rawurlencode($status['file'])
             );
-            Ssbhf_Process_backup_job($job_id);
-            exit;
         }
-        Ssbhf_Write_job_status(
-            $job_id, [
+        wp_send_json_success($status);
+    }
+
+    try {
+        $result = Ssbhf_Process_backup_chunk($job_id);
+    } catch (Throwable $error) {
+        $result = new WP_Error('backup_chunk_failed', $error->getMessage());
+    }
+
+    if (is_wp_error($result)) {
+        $status = [
             'status'  => 'failed',
-            'message' => 'Der Backup-Hintergrundjob konnte nicht geplant werden: ' . $scheduled->get_error_message(),
-            ]
-        );
-    } elseif (spawn_cron(time()) === false) {
-        if (function_exists('fastcgi_finish_request')) {
-            $fallback_status = [
-                'status'  => 'running',
-                'step'    => 'database',
-                'message' => 'WP-Cron ist blockiert. Backup wird direkt im Hintergrund verarbeitet ...',
-            ];
-            Ssbhf_Write_job_status($job_id, $fallback_status);
-            Ssbhf_Send_ajax_response(
-                [
-                'job_id'  => $job_id,
-                'message' => $fallback_status['message'],
-                'step'    => 'database',
-                ]
-            );
-            Ssbhf_Process_backup_job($job_id);
-            exit;
-        }
-        Ssbhf_Write_job_status(
-            $job_id, [
-            'status'  => 'failed',
-            'message' => 'WordPress konnte den Hintergrundjob nicht starten. Bitte WP-Cron und Loopback-Anfragen prüfen.',
-            ]
+            'task'    => 'backup',
+            'message' => $result->get_error_message(),
+        ];
+        Ssbhf_Write_job_status($job_id, $status);
+    } else {
+        $status = $result;
+    }
+
+    if ($status['status'] === 'done' && !empty($status['file'])) {
+        $status['redirect'] = admin_url(
+            'tools.php?page=ssb-simple-backup&ssb_notice=created&file=' . rawurlencode($status['file'])
         );
     }
 
-    wp_send_json_success(
-        [
-        'job_id'  => $job_id,
-        'message' => 'Backup wird jetzt erstellt. Das kann je nach Websitegröße einige Minuten dauern.',
-        ]
-    );
+    wp_send_json_success($status);
+}
+
+/**
+ * Initialize the archive once, then append one bounded batch from the manifest.
+ *
+ * @param string $job_id Background job identifier.
+ *
+ * @return array|WP_Error
+ */
+function Ssbhf_Process_backup_chunk(string $job_id)
+{
+    $state_path = Ssbhf_Analysis_state_path($job_id);
+    $state = is_readable($state_path)
+        ? json_decode((string) file_get_contents($state_path), true)
+        : false;
+    if (!is_array($state) || empty($state['manifest_path']) || !is_readable($state['manifest_path'])) {
+        return new WP_Error('backup_manifest_missing', 'Die temporäre Dateiliste fehlt. Bitte starte das Backup erneut.');
+    }
+
+    $status = Ssbhf_Read_job_status($job_id);
+    $database_message = is_array($status) && !empty($status['database_message'])
+        ? $status['database_message']
+        : 'Datenbank wird vorbereitet ...';
+
+    if (empty($state['zip_initialized'])) {
+        $db_ok = Ssbhf_Dump_db($state['tmp_sql']);
+        $zip = new \ZipArchive();
+        $open = $zip->open($state['zip_path'], \ZipArchive::CREATE | \ZipArchive::OVERWRITE);
+        if ($open !== true) {
+            @unlink($state['tmp_sql']);
+            return new WP_Error('zip_open_failed', 'ZIP konnte nicht angelegt werden. Rückgabecode: ' . (string) $open . '.');
+        }
+
+        if ($db_ok && file_exists($state['tmp_sql']) && !$zip->addFile($state['tmp_sql'], 'database.sql')) {
+            $zip->close();
+            @unlink($state['tmp_sql']);
+            return new WP_Error('zip_database_failed', 'Der Datenbank-Dump konnte nicht zum ZIP hinzugefügt werden.');
+        }
+        if (!$zip->close()) {
+            @unlink($state['tmp_sql']);
+            return new WP_Error('zip_close_failed', 'Das ZIP konnte nach dem Datenbank-Dump nicht gespeichert werden.');
+        }
+        @unlink($state['tmp_sql']);
+
+        $database_message = $db_ok
+            ? 'Datenbank-Dump wurde erstellt und zum ZIP hinzugefügt.'
+            : 'Die Datenbank konnte nicht gesichert werden; die Dateisicherung wird fortgesetzt.';
+        $state['zip_initialized'] = true;
+        Ssbhf_Add_job_log($job_id, $database_message, !$db_ok);
+    }
+
+    $manifest = @fopen($state['manifest_path'], 'rb');
+    if (!$manifest || fseek($manifest, (int) $state['manifest_offset']) !== 0) {
+        if (is_resource($manifest)) {
+            fclose($manifest);
+        }
+        return new WP_Error('backup_manifest_read_failed', 'Die temporäre Dateiliste konnte nicht gelesen werden.');
+    }
+
+    $zip = new \ZipArchive();
+    $open = $zip->open($state['zip_path'], \ZipArchive::CREATE);
+    if ($open !== true) {
+        fclose($manifest);
+        return new WP_Error('zip_reopen_failed', 'Das ZIP konnte für das nächste Dateipaket nicht geöffnet werden.');
+    }
+
+    $files_in_chunk = 0;
+    $entries_in_chunk = 0;
+    $deadline = microtime(true) + 2.0;
+    while ($entries_in_chunk < 100 && microtime(true) < $deadline) {
+        $line = fgets($manifest);
+        if ($line === false) {
+            break;
+        }
+        $entries_in_chunk++;
+        $state['manifest_offset'] += strlen($line);
+        $entry = json_decode($line, true);
+        if (!is_array($entry) || empty($entry['path']) || empty($entry['relative_path']) || !is_file($entry['path'])) {
+            continue;
+        }
+        if (!$zip->addFile($entry['path'], $entry['relative_path'])) {
+            $zip->close();
+            fclose($manifest);
+            return new WP_Error('zip_add_file_failed', 'Eine Datei konnte nicht zum ZIP hinzugefügt werden: ' . basename($entry['path']));
+        }
+        $files_in_chunk++;
+        $state['processed_files']++;
+    }
+
+    $manifest_complete = $state['manifest_offset'] >= (int) filesize($state['manifest_path']);
+    fclose($manifest);
+    if (!$zip->close()) {
+        return new WP_Error('zip_chunk_close_failed', 'Das ZIP konnte nach einem Dateipaket nicht gespeichert werden.');
+    }
+
+    if ($manifest_complete) {
+        $zip_size = is_file($state['zip_path']) ? filesize($state['zip_path']) : false;
+        if ($zip_size === false || $zip_size < 100) {
+            return new WP_Error('zip_invalid', 'Das fertige ZIP fehlt oder ist ungültig.');
+        }
+
+        $duration = microtime(true) - (float) $state['started_at'];
+        $done = [
+            'status'          => 'done',
+            'task'            => 'backup',
+            'message'         => 'Backup wurde erstellt. Größe: ' . size_format($zip_size) . '. Gesamtdauer: ' . Ssbhf_Format_duration($duration) . '.',
+            'file'            => $state['filename'],
+            'files'           => $state['files'],
+            'processed_files' => $state['processed_files'],
+            'database_message' => $database_message,
+        ];
+        Ssbhf_Write_job_status($job_id, $done);
+        @unlink($state['manifest_path']);
+        @unlink($state_path);
+        return $done;
+    }
+
+    if (@file_put_contents($state_path, wp_json_encode($state), LOCK_EX) === false) {
+        return new WP_Error('backup_state_write_failed', 'Der Fortschritt des ZIP-Auftrags konnte nicht gespeichert werden.');
+    }
+    $progress = [
+        'status'           => 'running',
+        'task'             => 'backup',
+        'step'             => 'files',
+        'message'          => 'Dateien werden paketweise zum ZIP hinzugefügt ...',
+        'database_message' => $database_message,
+        'files'            => $state['files'],
+        'processed_files'  => $state['processed_files'],
+    ];
+    Ssbhf_Write_job_status($job_id, $progress);
+    return $progress;
 }
 
 /**
@@ -759,6 +924,11 @@ function Ssbhf_Ajax_analyze(): void
     Ssbhf_Ensure_dirs();
 
     $job_id = wp_generate_uuid4();
+    $state = Ssbhf_Create_analysis_state($job_id);
+    if (is_wp_error($state)) {
+        wp_send_json_error($state->get_error_message(), 500);
+    }
+
     Ssbhf_Write_job_status(
         $job_id,
         [
@@ -772,238 +942,205 @@ function Ssbhf_Ajax_analyze(): void
         ]
     );
 
-    $scheduled = wp_schedule_single_event(time() + 1, 'ssbhf_process_analysis_job', [$job_id], true);
-    $schedule_error = is_wp_error($scheduled)
-        ? $scheduled->get_error_message()
-        : (spawn_cron(time()) === false ? 'WP-Cron konnte nicht gestartet werden.' : '');
-
-    if ($schedule_error !== '') {
-        if (function_exists('fastcgi_finish_request')) {
-            Ssbhf_Write_job_status(
-                $job_id,
-                [
-                    'status'  => 'running',
-                    'task'    => 'analysis',
-                    'message' => 'Der Hintergrundstart ist nicht verfügbar. Die Dateianalyse läuft direkt weiter ...',
-                    'files'   => 0,
-                    'bytes'   => 0,
-                    'estimated_zip_bytes' => 0,
-                ]
-            );
-            Ssbhf_Send_ajax_response(['job_id' => $job_id, 'task' => 'analysis']);
-            Ssbhf_Process_analysis_job($job_id);
-            exit;
-        }
-
-        wp_clear_scheduled_hook('ssbhf_process_analysis_job', [$job_id]);
-        Ssbhf_Process_analysis_job($job_id);
-    }
-
     wp_send_json_success(['job_id' => $job_id, 'task' => 'analysis']);
 }
 
 /**
- * Return the current state of a background backup job.
+ * Get the path to the persisted state of an analysis job.
+ *
+ * @param string $job_id Background job identifier.
+ *
+ * @return string
+ */
+function Ssbhf_Analysis_state_path(string $job_id): string
+{
+    $safe_id = preg_replace('/[^a-zA-Z0-9-]/', '', $job_id);
+    return trailingslashit(SSBHF_TMP_DIR) . 'analysis-' . $safe_id . '.json';
+}
+
+/**
+ * Create scan state and an empty file manifest for an analysis job.
+ *
+ * @param string $job_id Background job identifier.
+ *
+ * @return array|WP_Error
+ */
+function Ssbhf_Create_analysis_state(string $job_id)
+{
+    $root = realpath(ABSPATH);
+    if ($root === false) {
+        return new WP_Error('analysis_root_missing', 'Das WordPress-Verzeichnis konnte nicht gelesen werden.');
+    }
+
+    $excluded_dirs = [];
+    foreach ([SSBHF_BACKUP_DIR, SSBHF_TMP_DIR] as $directory) {
+        $real_directory = realpath($directory);
+        if ($real_directory !== false) {
+            $excluded_dirs[] = rtrim($real_directory, '/\\');
+        }
+    }
+
+    $state = [
+        'root'                 => rtrim($root, '/\\'),
+        'excluded_dirs'        => $excluded_dirs,
+        'stack'                => [['path' => rtrim($root, '/\\'), 'offset' => 0]],
+        'manifest_path'        => trailingslashit(SSBHF_TMP_DIR) . 'manifest-' . preg_replace('/[^a-zA-Z0-9-]/', '', $job_id) . '.jsonl',
+        'files'                => 0,
+        'bytes'                => 0,
+        'estimated_zip_bytes'  => 0,
+    ];
+
+    if (@file_put_contents($state['manifest_path'], '', LOCK_EX) === false
+        || @file_put_contents(Ssbhf_Analysis_state_path($job_id), wp_json_encode($state), LOCK_EX) === false
+    ) {
+        return new WP_Error('analysis_state_write_failed', 'Der temporäre Status der Dateianalyse konnte nicht gespeichert werden.');
+    }
+
+    return $state;
+}
+
+/**
+ * Process one bounded batch of directory entries for an analysis job.
+ *
+ * @param string $job_id Background job identifier.
+ *
+ * @return array|WP_Error
+ */
+function Ssbhf_Process_analysis_chunk(string $job_id)
+{
+    $state_path = Ssbhf_Analysis_state_path($job_id);
+    $state = is_readable($state_path)
+        ? json_decode((string) file_get_contents($state_path), true)
+        : false;
+    if (!is_array($state)) {
+        return new WP_Error('analysis_state_missing', 'Der Status der Dateianalyse konnte nicht gelesen werden.');
+    }
+
+    $manifest = @fopen($state['manifest_path'], 'ab');
+    if (!$manifest) {
+        return new WP_Error('analysis_manifest_open_failed', 'Die temporäre Dateiliste konnte nicht geöffnet werden.');
+    }
+
+    $entries_processed = 0;
+    $max_entries = 250;
+    $deadline = microtime(true) + 2.0;
+    $stack = $state['stack'];
+
+    while ($stack && $entries_processed < $max_entries && microtime(true) < $deadline) {
+        $directory = array_pop($stack);
+        $handle = @opendir($directory['path']);
+        if (!$handle) {
+            continue;
+        }
+
+        $entry_index = 0;
+        while (($name = readdir($handle)) !== false) {
+            if ($name === '.' || $name === '..') {
+                continue;
+            }
+            $entry_index++;
+
+            if ($entry_index <= (int) $directory['offset']) {
+                continue;
+            }
+
+            $path = $directory['path'] . DIRECTORY_SEPARATOR . $name;
+            $directory['offset'] = $entry_index;
+            $entries_processed++;
+
+            if (is_link($path)) {
+                continue;
+            }
+
+            $excluded = false;
+            foreach ($state['excluded_dirs'] as $excluded_dir) {
+                if ($path === $excluded_dir || strpos($path, $excluded_dir . DIRECTORY_SEPARATOR) === 0) {
+                    $excluded = true;
+                    break;
+                }
+            }
+            if ($excluded) {
+                continue;
+            }
+
+            if (is_dir($path)) {
+                $stack[] = $directory;
+                $stack[] = ['path' => $path, 'offset' => 0];
+                break;
+            }
+
+            if (is_file($path)) {
+                $size = @filesize($path);
+                if ($size !== false) {
+                    $relative_path = ltrim(substr($path, strlen($state['root'])), '/\\');
+                    $line = wp_json_encode(['path' => $path, 'relative_path' => $relative_path]);
+                    if ($line !== false) {
+                        fwrite($manifest, $line . "\n");
+                        $state['files']++;
+                        $state['bytes'] += $size;
+                        $state['estimated_zip_bytes'] += (int) round($size * Ssbhf_Estimated_compression_ratio($path));
+                    }
+                }
+            }
+
+            if ($entries_processed >= $max_entries || microtime(true) >= $deadline) {
+                $stack[] = $directory;
+                break;
+            }
+        }
+
+        closedir($handle);
+    }
+
+    fclose($manifest);
+    $state['stack'] = $stack;
+    if (@file_put_contents($state_path, wp_json_encode($state), LOCK_EX) === false) {
+        return new WP_Error('analysis_state_write_failed', 'Der Fortschritt der Dateianalyse konnte nicht gespeichert werden.');
+    }
+
+    $done = empty($stack);
+    $status = [
+        'status'              => $done ? 'done' : 'running',
+        'task'                => 'analysis',
+        'step'                => 'analysis',
+        'message'             => $done ? 'Dateianalyse abgeschlossen.' : 'Dateien werden untersucht ...',
+        'files'               => $state['files'],
+        'bytes'               => $state['bytes'],
+        'estimated_zip_bytes' => $state['estimated_zip_bytes'],
+    ];
+    Ssbhf_Write_job_status($job_id, $status);
+
+    return $status;
+}
+
+/**
+ * Process one analysis packet requested by the browser.
  *
  * @return void
  */
-function Ssbhf_Ajax_status(): void
+function Ssbhf_Ajax_analyze_chunk(): void
 {
     Ssbhf_Check_ajax_access();
-
     $job_id = isset($_POST['job_id']) ? sanitize_text_field(wp_unslash($_POST['job_id'])) : '';
     $status = $job_id ? Ssbhf_Read_job_status($job_id) : false;
-    if (!is_array($status)) {
-        wp_send_json_error('Der Status des Backups konnte nicht gelesen werden.', 404);
+    if (!is_array($status) || empty($status['task']) || $status['task'] !== 'analysis') {
+        wp_send_json_error('Die Dateianalyse wurde nicht gefunden.', 404);
+    }
+    if ($status['status'] === 'done' || $status['status'] === 'failed') {
+        wp_send_json_success($status);
     }
 
-    if ($status['status'] === 'queued' && !empty($status['created_at']) && time() - (int) $status['created_at'] > 15) {
-        $is_analysis = isset($status['task']) && $status['task'] === 'analysis';
-        if (function_exists('fastcgi_finish_request')) {
-            $status['status'] = 'running';
-            $status['step'] = $is_analysis ? 'analysis' : 'database';
-            $status['message'] = $is_analysis
-                ? 'WP-Cron hat nicht reagiert. Die Dateianalyse läuft direkt im Hintergrund ...'
-                : 'WP-Cron hat nicht reagiert. Backup wird direkt im Hintergrund verarbeitet ...';
-            Ssbhf_Write_job_status($job_id, $status);
-            Ssbhf_Send_ajax_response($status);
-            if ($is_analysis) {
-                Ssbhf_Process_analysis_job($job_id);
-            } else {
-                Ssbhf_Process_backup_job($job_id);
-            }
-            exit;
-        }
-        if ($is_analysis) {
-            Ssbhf_Process_analysis_job($job_id);
-            $status = Ssbhf_Read_job_status($job_id);
-            wp_send_json_success(is_array($status) ? $status : ['status' => 'failed', 'task' => 'analysis', 'message' => 'Der Status der Dateianalyse konnte nicht gelesen werden.']);
-        }
-        $status['status'] = 'failed';
-        $status['message'] = $is_analysis
-            ? 'Die Dateianalyse wurde nicht gestartet. Auf dieser Installation sind WP-Cron oder Loopback-Anfragen vermutlich deaktiviert bzw. blockiert.'
-            : 'Der Backup-Hintergrundjob wurde nicht gestartet. Auf dieser Installation sind WP-Cron oder Loopback-Anfragen vermutlich deaktiviert bzw. blockiert.';
-        $status['log'] = isset($status['log']) && is_array($status['log']) ? $status['log'] : [];
-        $status['log'][] = ['message' => 'Fehler: WP-Cron hat den Job nach 15 Sekunden nicht ausgeführt.', 'error' => true];
-        Ssbhf_Write_job_status($job_id, $status);
-    }
-
-    if ($status['status'] === 'done' && !empty($status['file'])) {
-        $status['redirect'] = admin_url(
-            'tools.php?page=ssb-simple-backup&ssb_notice=created&file=' . rawurlencode($status['file'])
-        );
-    }
-
-    wp_send_json_success($status);
-}
-
-/**
- * Finish the AJAX response before running the PHP fallback job.
- *
- * @param array $data Response data.
- *
- * @return void
- */
-function Ssbhf_Send_ajax_response(array $data): void
-{
-    nocache_headers();
-    header('Content-Type: application/json; charset=' . get_option('blog_charset'));
-    echo wp_json_encode(['success' => true, 'data' => $data]);
-    fastcgi_finish_request();
-}
-
-/**
- * Process a queued backup from WP-Cron.
- *
- * @param string $job_id Background job identifier.
- *
- * @return void
- */
-function Ssbhf_Process_backup_job(string $job_id): void
-{
-    Ssbhf_Write_job_status(
-        $job_id, [
-        'status'  => 'running',
-        'message' => 'Dateien und Datenbank werden gesichert ...',
-        ]
-    );
-
-    try {
-        $started_at = microtime(true);
-        $result = Ssbhf_Create_backup($job_id);
-        if (is_wp_error($result)) {
-            Ssbhf_Write_job_status(
-                $job_id, [
-                'status'  => 'failed',
-                'message' => $result->get_error_message(),
-                ]
-            );
-            return;
-        }
-
-        Ssbhf_Write_job_status(
-            $job_id, [
-            'status'  => 'done',
-            'message' => 'Backup wurde erfolgreich erstellt. Gesamtdauer: ' . Ssbhf_Format_duration(microtime(true) - $started_at) . '.',
-            'file'    => $result,
-            ]
-        );
-    } catch (Throwable $error) {
-        Ssbhf_Write_job_status(
-            $job_id, [
+    $result = Ssbhf_Process_analysis_chunk($job_id);
+    if (is_wp_error($result)) {
+        $result = [
             'status'  => 'failed',
-            'message' => 'Backup fehlgeschlagen: ' . $error->getMessage(),
-            ]
-        );
-    }
-}
-
-/**
- * Scan site files and estimate the archive size without including the database.
- *
- * @param string $job_id Background job identifier.
- *
- * @return void
- */
-function Ssbhf_Process_analysis_job(string $job_id): void
-{
-    if (function_exists('set_time_limit')) {
-        @set_time_limit(0);
-    }
-    if (function_exists('ignore_user_abort')) {
-        ignore_user_abort(true);
+            'task'    => 'analysis',
+            'message' => $result->get_error_message(),
+        ];
+        Ssbhf_Write_job_status($job_id, $result);
     }
 
-    $file_count = 0;
-    $total_bytes = 0;
-    $estimated_zip_bytes = 0;
-
-    Ssbhf_Write_job_status(
-        $job_id,
-        [
-            'status'              => 'running',
-            'task'                => 'analysis',
-            'step'                => 'analysis',
-            'message'             => 'Dateien werden untersucht ...',
-            'files'               => 0,
-            'bytes'               => 0,
-            'estimated_zip_bytes' => 0,
-        ]
-    );
-
-    try {
-        Ssbhf_Iterate_site_files(
-            static function (string $path, string $relative_path) use ($job_id, &$file_count, &$total_bytes, &$estimated_zip_bytes): void {
-                $size = @filesize($path);
-                if ($size === false) {
-                    return;
-                }
-
-                $file_count++;
-                $total_bytes += $size;
-                $estimated_zip_bytes += (int) round($size * Ssbhf_Estimated_compression_ratio($path));
-
-                if ($file_count % 100 === 0) {
-                    Ssbhf_Write_job_status(
-                        $job_id,
-                        [
-                            'status'              => 'running',
-                            'task'                => 'analysis',
-                            'step'                => 'analysis',
-                            'message'             => 'Dateien werden untersucht ...',
-                            'files'               => $file_count,
-                            'bytes'               => $total_bytes,
-                            'estimated_zip_bytes' => $estimated_zip_bytes,
-                        ]
-                    );
-                }
-            }
-        );
-
-        Ssbhf_Write_job_status(
-            $job_id,
-            [
-                'status'              => 'done',
-                'task'                => 'analysis',
-                'message'             => 'Dateianalyse abgeschlossen.',
-                'files'               => $file_count,
-                'bytes'               => $total_bytes,
-                'estimated_zip_bytes' => $estimated_zip_bytes,
-            ]
-        );
-    } catch (Throwable $error) {
-        Ssbhf_Write_job_status(
-            $job_id,
-            [
-                'status'  => 'failed',
-                'task'    => 'analysis',
-                'message' => 'Die Dateianalyse ist fehlgeschlagen: ' . $error->getMessage(),
-                'files'   => $file_count,
-                'bytes'   => $total_bytes,
-                'estimated_zip_bytes' => $estimated_zip_bytes,
-            ]
-        );
-    }
+    wp_send_json_success($result);
 }
 
 /**
@@ -1105,84 +1242,6 @@ function Ssbhf_Format_duration(float $seconds): string
 }
 
 /**
- * Run the backup process, creating a ZIP file with site files and database.
- *
- * @return void
- */
-function Ssbhf_Run_backup(): void
-{
-    if (!current_user_can('manage_options')) {
-        wp_die('Forbidden', 403);
-    }
-    check_admin_referer('ssbhf_run');
-
-    $result = Ssbhf_Create_backup();
-    if (is_wp_error($result)) {
-        wp_safe_redirect(admin_url('tools.php?page=ssb-simple-backup&ssb_notice=failed&msg=' . rawurlencode($result->get_error_message())));
-        exit;
-    }
-
-    wp_safe_redirect(admin_url('tools.php?page=ssb-simple-backup&ssb_notice=created&file=' . rawurlencode($result)));
-    exit;
-}
-
-/**
- * Visit files included in a site backup, excluding backup and temporary data.
- *
- * @param callable $callback Receives the absolute and archive-relative paths.
- *
- * @return void
- */
-function Ssbhf_Iterate_site_files(callable $callback): void
-{
-    $root = realpath(ABSPATH);
-    if ($root === false) {
-        throw new RuntimeException('Das WordPress-Verzeichnis konnte nicht gelesen werden.');
-    }
-    $root = rtrim($root, '/\\');
-
-    $excluded_dirs = [];
-    foreach ([SSBHF_BACKUP_DIR, SSBHF_TMP_DIR] as $directory) {
-        $real_directory = realpath($directory);
-        if ($real_directory !== false) {
-            $excluded_dirs[] = rtrim($real_directory, '/\\');
-        }
-    }
-
-    $iterator = new RecursiveIteratorIterator(
-        new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS),
-        RecursiveIteratorIterator::SELF_FIRST
-    );
-
-    foreach ($iterator as $file_info) {
-        if (!$file_info->isFile()) {
-            continue;
-        }
-
-        $path = $file_info->getRealPath();
-        if (!$path) {
-            continue;
-        }
-
-        $excluded = false;
-        foreach ($excluded_dirs as $directory) {
-            if ($path === $directory || strpos($path, $directory . DIRECTORY_SEPARATOR) === 0) {
-                $excluded = true;
-                break;
-            }
-        }
-        if ($excluded) {
-            continue;
-        }
-
-        $relative_path = ltrim(substr($path, strlen($root)), '/\\');
-        if ($relative_path !== '') {
-            $callback($path, $relative_path);
-        }
-    }
-}
-
-/**
  * Estimate how much a file shrinks when added to a ZIP archive.
  *
  * @param string $path Absolute file path.
@@ -1203,134 +1262,6 @@ function Ssbhf_Estimated_compression_ratio(string $path): float
     }
 
     return 0.65;
-}
-
-/**
- * Create a backup ZIP and return its filename.
- *
- * @param string|null $job_id Background job identifier, if applicable.
- *
- * @return string|WP_Error
- */
-function Ssbhf_Create_backup(?string $job_id = null)
-{
-    if (!Ssbhf_System_Checks_Passed(Ssbhf_Get_System_checks())) {
-        return new WP_Error('system_check_failed', 'Die Systemprüfung ist nicht vollständig. Bitte prüfe die Voraussetzungen auf der Plugin-Seite.');
-    }
-
-    // Backups großer Sites brauchen mehr als das PHP-Default-Zeitlimit (30s)
-    if (function_exists('set_time_limit')) {
-        @set_time_limit(0);
-    }
-    if (function_exists('ignore_user_abort')) {
-        ignore_user_abort(true);
-    }
-
-    Ssbhf_Ensure_dirs();
-
-    if ($job_id) {
-        $free_space = @disk_free_space(SSBHF_BACKUP_DIR);
-        $free_space_message = $free_space !== false ? size_format($free_space) : 'unbekannt';
-        Ssbhf_Add_job_log(
-            $job_id,
-            'ZIP-Ziel geprüft: ' . (is_writable(SSBHF_BACKUP_DIR) ? 'beschreibbar' : 'nicht beschreibbar') . ', freier Speicher: ' . $free_space_message . '.'
-        );
-    }
-
-    $host = parse_url(home_url(), PHP_URL_HOST);
-    $host = $host ? preg_replace('~[^a-zA-Z0-9\._-]~', '-', $host) : 'site';
-    $filename = 'wp-backup_files-db_' . $host . '_' . gmdate('Y-m-d_His') . '.zip';
-
-    $zip_path = Ssbhf_Backup_path($filename);
-    $tmp_sql  = trailingslashit(SSBHF_TMP_DIR) . 'database_' . $host . '_' . gmdate('Ymd_His') . '.sql';
-
-    $db_started_at = microtime(true);
-
-    if ($job_id) {
-        Ssbhf_Write_job_status(
-            $job_id, [
-            'status'  => 'running',
-            'step'    => 'database',
-            'message' => 'Schritt 1 von 2: Die Datenbank wird gesichert ...',
-            ]
-        );
-    }
-
-    // 1) DB dump to tmp (best-effort)
-    $db_ok = Ssbhf_Dump_db($tmp_sql);
-
-    if ($job_id) {
-        $db_size = $db_ok && file_exists($tmp_sql) ? filesize($tmp_sql) : 0;
-        $db_message = $db_ok
-            ? 'Schritt 1 abgeschlossen: Datenbank-Dump mit ' . size_format($db_size) . ' in ' . Ssbhf_Format_duration(microtime(true) - $db_started_at) . ' erstellt.'
-            : 'Schritt 1 abgeschlossen: Die Datenbank konnte nicht gesichert werden.';
-        Ssbhf_Write_job_status(
-            $job_id, [
-            'status'  => 'running',
-            'step'    => 'files',
-            'database_message' => $db_message,
-            'message' => $db_message . ' Als Nächstes: Schritt 2 von 2, die Dateien werden jetzt gepackt ...',
-            ]
-        );
-        Ssbhf_Add_job_log($job_id, $db_message, !$db_ok);
-    }
-
-    // 2) Create ZIP
-    if ($job_id) {
-        Ssbhf_Add_job_log($job_id, 'ZIP-Datei wird angelegt: ' . $filename . '.');
-    }
-    $zip = new \ZipArchive();
-    $open = $zip->open($zip_path, \ZipArchive::CREATE | \ZipArchive::OVERWRITE);
-    if ($open !== true) {
-        if ($job_id) {
-            Ssbhf_Add_job_log($job_id, 'Fehler: ZIP konnte nicht geöffnet werden. Rückgabecode: ' . (string) $open . '.', true);
-        }
-        @unlink($tmp_sql);
-        return new WP_Error('zip_open_failed', 'ZIP konnte nicht geöffnet werden. Rückgabecode: ' . (string) $open . '.');
-    }
-
-    if ($db_ok && file_exists($tmp_sql)) {
-        $zip->addFile($tmp_sql, 'database.sql');
-    }
-
-    Ssbhf_Iterate_site_files(
-        static function (string $path, string $relative_path) use ($zip): void {
-            $zip->addFile($path, $relative_path);
-        }
-    );
-
-    $close_ok = $zip->close();
-    $zip_status = method_exists($zip, 'getStatusString') ? $zip->getStatusString() : 'unbekannt';
-    @unlink($tmp_sql);
-
-    $zip_size = file_exists($zip_path) ? filesize($zip_path) : false;
-    if ($job_id) {
-        $zip_size_message = $zip_size !== false ? size_format($zip_size) : 'Datei fehlt';
-        Ssbhf_Add_job_log(
-            $job_id,
-            'ZIP abgeschlossen: Status „' . $zip_status . '“, Größe: ' . $zip_size_message . '.'
-        );
-    }
-
-    if (!$close_ok) {
-        if ($job_id) {
-            Ssbhf_Add_job_log($job_id, 'Fehler: ZIP konnte nicht finalisiert werden.', true);
-        }
-        return new WP_Error('zip_close_failed', 'ZIP konnte nicht finalisiert werden. ZIP-Status: ' . $zip_status . '.');
-    }
-
-    // Sanity
-    if (!file_exists($zip_path) || $zip_size === false || $zip_size < 100) {
-        if ($job_id) {
-            Ssbhf_Add_job_log($job_id, 'Fehler: Die ZIP-Datei fehlt oder ist kleiner als 100 Byte.', true);
-        }
-        return new WP_Error(
-            'zip_invalid',
-            'ZIP wurde nicht korrekt geschrieben. Größe: ' . ($zip_size !== false ? size_format($zip_size) : 'Datei fehlt') . '. ZIP-Status: ' . $zip_status . '.'
-        );
-    }
-
-    return $filename;
 }
 
 /**
