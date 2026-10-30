@@ -2,7 +2,7 @@
 
 Ein schlankes und benutzerfreundliches WordPress-Plugin für vollständige Website-Backups.
 
-**Version:** 2.0.0
+**Version:** 2.0.1
 **Lizenz:** GPLv2 oder später
 **Autor:** Christian Suchanek
 
@@ -339,6 +339,13 @@ Vollständige Lizenz: [GPL 2.0](https://www.gnu.org/licenses/gpl-2.0.html)
 - ✅ Diagnoseprotokoll und konkretere Fehlermeldungen für fehlgeschlagene Backup-Aufträge
 - ✅ Backup-Laufzeit wird nach erfolgreichem Abschluss angezeigt
 - ✅ Backup-Verwaltung mit Download und bestätigtem Löschen überarbeitet
+
+### Version 2.0.1
+
+- ✅ Backup kann ohne vorherige Dateianalyse gestartet werden
+- ✅ Optionale Dateianalyse zeigt eine grobe Zeitspanne an
+- ✅ Dateianalyse und ZIP-Erstellung laufen in Browser-gesteuerten Paketen ohne WP-Cron
+- ✅ Fortschrittsdialog ohne Terminalausgabe
 
 ### Version 1.2.3
 
