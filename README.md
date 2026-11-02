@@ -6,6 +6,8 @@ Ein schlankes und benutzerfreundliches WordPress-Plugin für vollständige Websi
 **Lizenz:** GPLv2 oder später
 **Autor:** Christian Suchanek
 
+[![Hier aktuelle Version herunterladen](https://img.shields.io/badge/Plugin--ZIP-aktuelle_Version_herunterladen-2271b1?style=for-the-badge)](https://github.com/suchfot/suchis-simple-backup-v3/releases/latest/download/suchis-simple-backup.zip)
+
 ---
 
 ## 📋 Inhaltsverzeichnis
@@ -22,7 +24,7 @@ Ein schlankes und benutzerfreundliches WordPress-Plugin für vollständige Websi
 
 ---
 
-## ✨ Features
+## Features
 
 - **Website-Backup:** Packt die Website-Dateien und, sofern der Datenbank-Dump gelingt, die WordPress-Datenbank in eine ZIP-Datei
 - **ZIP-Kompression:** Automatische Komprimierung für einfacheren Download und Speicher
@@ -38,7 +40,7 @@ Ein schlankes und benutzerfreundliches WordPress-Plugin für vollständige Websi
 
 ---
 
-## 🚀 Installation
+## Installation
 
 ### Manuelle Installation
 
@@ -55,7 +57,7 @@ Ein schlankes und benutzerfreundliches WordPress-Plugin für vollständige Websi
 
 ---
 
-## 📋 Anforderungen
+## Anforderungen
 
 - **WordPress:** 6.0 oder höher
 - **PHP:** 7.4 oder höher
@@ -69,9 +71,18 @@ Nach der Aktivierung zeigt WordPress eine erste Systemprüfung. Unter **Werkzeug
 
 Die Dateien werden in kleinen AJAX-Paketen untersucht und zum ZIP hinzugefügt. Dafür sind weder WP-Cron noch Loopback-Anfragen erforderlich. Die ZIP-Größe ist eine Schätzung anhand der Dateitypen und enthält nicht die Datenbank.
 
+### Getestete Kombinationen
+
+| WordPress | PHP | Prüfumfang |
+| --- | --- | --- |
+| 6.8.3 | 7.4.33 | Aktivierung, Systemchecks, Dateianalyse und paketweiser Backup-Lauf |
+| 7.1.4 | 8.3.33 | Aktivierung und alle sieben Systemchecks |
+
+Das sind lokale Kompatibilitäts- und Smoke-Tests. Der Playground-Lauf verwendet SQLite und ersetzt keinen zusätzlichen Test des Datenbank-Dumps mit MySQL oder MariaDB.
+
 ---
 
-## 💻 Verwendung
+## Verwendung
 
 ### Zugriff auf das Plugin
 
@@ -123,7 +134,7 @@ Serverprotokoll benötigt.
 
 ---
 
-## 🔒 Sicherheit
+## Sicherheit
 
 ### Automatische Schutzmaßnahmen
 
@@ -158,7 +169,7 @@ Alle Datenbankwerte werden korrekt escaped:
 
 ---
 
-## ❓ Häufig gestellte Fragen
+## Häufig gestellte Fragen
 
 ### F: Wie lange dauert ein Backup?
 
@@ -189,7 +200,7 @@ Alle Datenbankwerte werden korrekt escaped:
 
 ---
 
-## 🐛 Fehlerbehandlung
+## Fehlerbehandlung
 
 ### „ZipArchive fehlt"
 
@@ -267,7 +278,7 @@ Das Plugin versucht, das PHP-Ausführungslimit für die Backup-Erstellung aufzuh
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 Beiträge sind willkommen! Bitte beachte:
 
@@ -296,7 +307,7 @@ Auch das Versions-Tag erstellt ein Release und aktualisiert den Download-Link au
 
 ---
 
-## 📝 Lizenz
+## Lizenz
 
 Dieses Plugin ist unter der **GPLv2 oder später** Lizenz lizenziert.
 

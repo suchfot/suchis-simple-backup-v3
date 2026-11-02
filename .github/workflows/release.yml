@@ -30,6 +30,7 @@ jobs:
         run: |
           mkdir -p dist/suchis-simple-backup
           cp suchis-simple-backup.php README.md dist/suchis-simple-backup/
+          cp -R includes assets templates dist/suchis-simple-backup/
           cd dist
           zip -r suchis-simple-backup.zip suchis-simple-backup
 
