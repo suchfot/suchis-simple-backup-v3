@@ -49,5 +49,5 @@ function Ssbhf_Render_page(): void
     $partials = Ssbhf_List_partial_backups();
     $panel_id = 'ssbhf-page-checks';
 
-    require SSBHF_PLUGIN_DIR . 'templates/admin-page.php';
+    include SSBHF_PLUGIN_DIR . 'templates/admin-page.php';
 }
