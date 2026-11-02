@@ -128,13 +128,34 @@ function Ssbhf_Delete_backup(): void
     check_admin_referer('ssbhf_delete');
 
     $name = isset($_GET['file']) ? sanitize_file_name(wp_unslash($_GET['file'])) : '';
-    if (!$name || substr($name, -4) !== '.zip') {
+    $is_partial = substr($name, -12) === '.zip.partial';
+    if (!$name || strpbrk($name, "/\\\0\r\n") !== false
+        || (!$is_partial && substr($name, -4) !== '.zip')
+    ) {
         wp_die('Invalid file', 400);
     }
 
+    $lock = null;
+    if ($is_partial) {
+        $lock = Ssbhf_Backup_lock();
+        if (!$lock) {
+            wp_die('Ein Backup wird gerade verarbeitet.', 409);
+        }
+        $partial_names = array_column(Ssbhf_List_partial_backups(), 'name');
+        if (!in_array($name, $partial_names, true)) {
+            flock($lock, LOCK_UN);
+            fclose($lock);
+            wp_die('Die unfertige Backup-Datei ist nicht verfügbar.', 404);
+        }
+    }
+
     $path = Ssbhf_Backup_path($name);
-    if (file_exists($path)) {
+    if (is_file($path) && !is_link($path)) {
         @unlink($path);
+    }
+    if (is_resource($lock)) {
+        flock($lock, LOCK_UN);
+        fclose($lock);
     }
 
     wp_safe_redirect(admin_url('tools.php?page=ssb-simple-backup&ssb_notice=deleted'));
@@ -199,6 +220,63 @@ function Ssbhf_List_backups(): array
     $out = [];
     foreach ($items as $path) {
         $out[] = ['name' => basename($path), 'size' => filesize($path), 'mtime' => filemtime($path)];
+    }
+    usort($out, fn($a, $b) => $b['mtime'] <=> $a['mtime']);
+    return $out;
+}
+
+/**
+ * List orphaned partial archives, excluding the archive owned by an active job.
+ *
+ * @return array An array of partial file information (name, size, mtime).
+ */
+function Ssbhf_List_partial_backups(): array
+{
+    if (!is_dir(SSBHF_BACKUP_DIR)) {
+        return [];
+    }
+    $items = glob(SSBHF_BACKUP_DIR . '/*.zip.partial');
+    if (!$items) {
+        return [];
+    }
+
+    $active_path = '';
+    $active_job_file = SSBHF_TMP_DIR . '/active-backup.json';
+    $active_job_data = is_readable($active_job_file)
+        ? json_decode((string) file_get_contents($active_job_file), true)
+        : null;
+    $active_job_id = is_array($active_job_data)
+        ? ($active_job_data['job_id'] ?? '')
+        : '';
+    if (is_string($active_job_id) && $active_job_id !== '') {
+        $state_path = Ssbhf_Analysis_state_path($active_job_id);
+        $state = is_readable($state_path)
+            ? json_decode((string) file_get_contents($state_path), true)
+            : null;
+        if (is_array($state) && !empty($state['zip_path'])) {
+            $active_path = realpath($state['zip_path']) ?: '';
+        }
+    }
+
+    $out = [];
+    foreach ($items as $path) {
+        if (is_link($path) || !is_file($path)) {
+            continue;
+        }
+        $real_path = realpath($path);
+        if ($real_path === false
+            || ($active_path !== '' && $real_path === $active_path)
+        ) {
+            continue;
+        }
+        $size = @filesize($real_path);
+        $mtime = @filemtime($real_path);
+        if ($size === false || $mtime === false) {
+            continue;
+        }
+        $out[] = [
+            'name' => basename($real_path), 'size' => $size, 'mtime' => $mtime,
+        ];
     }
     usort($out, fn($a, $b) => $b['mtime'] <=> $a['mtime']);
     return $out;

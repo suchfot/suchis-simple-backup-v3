@@ -55,7 +55,7 @@ if (!defined('ABSPATH')) {
 
     <h2 class="ssb-section-title">Vorhandene Backups</h2>
     <?php if (!$files) : ?>
-        <p class="ssb-empty"><em>Noch keine Backups vorhanden.</em></p>
+        <p class="ssb-empty"><em>Noch keine vollständigen Backups vorhanden.</em></p>
     <?php else : ?>
         <table class="widefat striped ssb-table">
             <thead>
@@ -76,6 +76,36 @@ if (!defined('ABSPATH')) {
                                 <span class="dashicons dashicons-download" aria-hidden="true"></span> Download
                             </a>
                             <a class="button button-small ssb-delete-backup" href="<?php echo esc_url($delete_url); ?>" data-file="<?php echo esc_attr($backup['name']); ?>">
+                                <span class="dashicons dashicons-trash" aria-hidden="true"></span> Löschen
+                            </a>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    <?php endif; ?>
+
+    <?php if ($partials) : ?>
+        <h2 class="ssb-section-title">Unfertige Backup-Dateien</h2>
+        <p>Diese Archive sind unvollständig und können nicht wiederhergestellt werden.</p>
+        <table class="widefat striped ssb-table">
+            <thead>
+                <tr><th>Datei</th><th>Größe</th><th>Datum</th><th>Aktionen</th></tr>
+            </thead>
+            <tbody>
+                <?php foreach ($partials as $partial) : ?>
+                    <?php
+                    $delete_url = wp_nonce_url(
+                        admin_url('admin-post.php?action=ssbhf_delete&file=' . rawurlencode($partial['name'])),
+                        'ssbhf_delete'
+                    );
+                    ?>
+                    <tr>
+                        <td><code><?php echo esc_html($partial['name']); ?></code></td>
+                        <td><?php echo esc_html(size_format($partial['size'])); ?></td>
+                        <td><?php echo esc_html(date_i18n(get_option('date_format') . ' ' . get_option('time_format'), $partial['mtime'])); ?></td>
+                        <td>
+                            <a class="button button-small ssb-delete-backup" href="<?php echo esc_url($delete_url); ?>" data-file="<?php echo esc_attr($partial['name']); ?>">
                                 <span class="dashicons dashicons-trash" aria-hidden="true"></span> Löschen
                             </a>
                         </td>

@@ -46,6 +46,7 @@ function Ssbhf_Render_page(): void
     $checks = Ssbhf_Get_System_checks();
     $backup_ready = Ssbhf_System_Checks_Passed($checks);
     $files = Ssbhf_List_backups();
+    $partials = Ssbhf_List_partial_backups();
     $panel_id = 'ssbhf-page-checks';
 
     require SSBHF_PLUGIN_DIR . 'templates/admin-page.php';
