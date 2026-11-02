@@ -37,7 +37,7 @@ function Ssbhf_Create_analysis_state(string $job_id)
     }
 
     $excluded_dirs = [];
-    foreach ([SSBHF_BACKUP_DIR, SSBHF_TMP_DIR] as $directory) {
+    foreach ([SSBHF_BACKUP_DIR, SSBHF_TMP_DIR, WP_CONTENT_DIR . '/cache'] as $directory) {
         $real_directory = realpath($directory);
         if ($real_directory !== false) {
             $excluded_dirs[] = rtrim($real_directory, '/\\');
